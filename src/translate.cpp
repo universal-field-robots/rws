@@ -167,8 +167,11 @@ static void serialize_field(
   if (!member->is_array_) {
     ser << (field.is_null() ? default_value : field.get<T>());
   } else if (member->array_size_ && !member->is_upper_bound_) {
-    for (size_t i = 0; i < member->array_size_; i++) {
-      ser << (field.is_null() || field[i].is_null() ? default_value : field[i].get<T>());
+
+    // ROS UUID messages are uint8[] which come fro json as a map of the form {"0": 0, "1": 1}
+    // Which works with iterators but not indexes
+    for (const auto& it: field) {
+      ser << (it.is_null() || field.is_null() ? default_value : it.get<T>());
     }
   } else {
     uint32_t seq_size = field.size();
@@ -189,7 +192,15 @@ static void json_to_serialized_message(cycser & ser, const MessageMembers * memb
       continue;
     }
 
+    // Needed for rosbridge compatability
     auto found_field = j.find(member->name_);
+    if (found_field == j.end()) {
+      if (strcmp(member->name_, "nanosec") == 0) {
+        found_field = j.find("nsecs");
+      } else if (strcmp(member->name_, "sec") == 0) {
+        found_field = j.find("secs");
+      }
+    }
 
     json field;
     if (found_field == j.end()) {
@@ -343,8 +354,13 @@ static std::string members_to_meta(
     if (name == "structure_needs_at_least_one_member") {
       continue;
     }
+
+    // Convert the timestamp to the form expected by roslibjs
     if (rosbridge_compatible && name == "nanosec" && parent_name == "stamp") {
-      name = "nsec";
+      name = "nsecs";
+    }
+    if (rosbridge_compatible && name == "sec" && parent_name == "stamp") {
+      name = "secs";
     }
 
     std::string b =

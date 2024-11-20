@@ -9,7 +9,7 @@
 namespace rws
 {
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 
 class ClientHandlerFixture : public testing::Test
 {
