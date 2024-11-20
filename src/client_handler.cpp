@@ -26,7 +26,7 @@
 namespace rws
 {
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
@@ -342,9 +342,7 @@ bool ClientHandler::call_service(const json & msg, json & response)
     }
     response["result"] = true;
     return true;
-  }
-
-  if (service == "/rosapi/service_type") {
+  } else if (service == "/rosapi/service_type") {
     std::string service_name = msg["args"]["service"];
     std::map<std::string, std::vector<std::string>> services = node_->get_service_names_and_types();
     if (services.find(service_name) == services.end()) {
@@ -356,9 +354,7 @@ bool ClientHandler::call_service(const json & msg, json & response)
     response["values"]["type"] = service_type;
     response["result"] = true;
     return true;
-  }
-
-  if (service == "/rosapi/nodes") {
+  } else if (service == "/rosapi/nodes") {
     response["values"]["nodes"] = json::array();
 
     std::vector<std::string> nodes = node_->get_node_names();
@@ -368,9 +364,7 @@ bool ClientHandler::call_service(const json & msg, json & response)
 
     response["result"] = true;
     return true;
-  }
-
-  if (service == "/rosapi/node_details") {
+  } else if (service == "/rosapi/node_details") {
     response["values"]["subscribing"] = json::array();
     response["values"]["publishing"] = json::array();
     response["values"]["services"] = json::array();
@@ -411,9 +405,7 @@ bool ClientHandler::call_service(const json & msg, json & response)
 
     response["result"] = true;
     return true;
-  }
-
-  if (service == "/rosapi/topic_type") {
+  } else if (service == "/rosapi/topic_type") {
     std::string topic_name = msg["args"]["topic"].get<std::string>();
     std::map<std::string, std::vector<std::string>> topics = node_->get_topic_names_and_types(); 
     if (topics.find(topic_name) == topics.end()) {
@@ -424,9 +416,7 @@ bool ClientHandler::call_service(const json & msg, json & response)
     response["values"]["type"] = topics[topic_name][0];
     response["result"] = true;
     return true;
-  }
-
-  if (service == "/rosapi/services_for_type") {
+  } else if (service == "/rosapi/services_for_type") {
     std::string service_type = msg["args"]["type"].get<std::string>();
     auto service_name_and_types = node_->get_service_names_and_types();
 

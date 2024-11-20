@@ -23,7 +23,7 @@
 #include "rws/connector.hpp"
 #include "rws/node_interface_impl.hpp"
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 using websocketpp::connection_hdl;
 using websocketpp::lib::bind;
 using websocketpp::lib::condition_variable;

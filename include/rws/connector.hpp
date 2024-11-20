@@ -64,7 +64,9 @@ public:
     for(const auto& node : info)
     {
       qos.durability(node.qos_profile().get_rmw_qos_profile().durability);
+      qos.reliability(node.qos_profile().get_rmw_qos_profile().reliability);
     }
+
     bool is_transient_local = qos.durability() == rclcpp::DurabilityPolicy::TransientLocal;
 
     if (matching_subscriber == nullptr || is_transient_local) {

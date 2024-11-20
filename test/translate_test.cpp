@@ -14,7 +14,7 @@
 namespace rws
 {
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 
 class TranslateFixture : public testing::Test
 {

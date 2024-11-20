@@ -17,6 +17,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "nlohmann/json_fwd.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rws/connector.hpp"
 #include "rws/generic_client.hpp"
@@ -24,7 +25,7 @@
 namespace rws
 {
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 class ClientHandler
 {
 public:
