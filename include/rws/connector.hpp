@@ -183,6 +183,7 @@ private:
 
   void topic_message_callback(topic_params & params, std::shared_ptr<const rclcpp::SerializedMessage> message)
   {
+    std::lock_guard<std::mutex> guard(subscribers_mutex_);
     for (auto & sub : subscribers_) {
       if (sub.params == params &&
           (params.throttle_rate.nanoseconds() == 0 || (sub.last_sent + params.throttle_rate) < node_->now())) {
