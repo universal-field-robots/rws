@@ -39,7 +39,7 @@ add_definitions(
 )
 fetchcontent_declare(websocketpp
 GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
-  GIT_TAG 0.8.2)
+  GIT_TAG b9aeec6eaf3d5610503439b4fae3581d9aff08e8)
 fetchcontent_getproperties(websocketpp)
 if(NOT websocketpp_POPULATED)
   fetchcontent_populate(websocketpp)
