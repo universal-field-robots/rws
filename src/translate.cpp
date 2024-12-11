@@ -133,6 +133,8 @@ static void serialized_message_to_json(cycdeser & deser, const MessageMembers * 
 
           if (array_size != 0 && !member->get_function) {
             throw std::runtime_error("unexpected error: get_function function is null");
+          } else if (array_size == 0) {
+            j[member->name_] = json::array();
           }
           for (size_t index = 0; index < array_size; ++index) {
             serialized_message_to_json(deser, sub_members, j[member->name_][index]);
