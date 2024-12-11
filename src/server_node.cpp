@@ -15,13 +15,16 @@
 #include <cstdio>
 #include <nlohmann/json.hpp>
 #include <websocketpp/config/asio_no_tls.hpp>
+#include <websocketpp/extensions/permessage_deflate/enabled.hpp>
 #include <websocketpp/server.hpp>
 
+#include "asio/error_code.hpp"
 #include "rclcpp/executors.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rws/client_handler.hpp"
 #include "rws/connector.hpp"
 #include "rws/node_interface_impl.hpp"
+#include "websocketpp/common/connection_hdl.hpp"
 
 using json = nlohmann::ordered_json;
 using websocketpp::connection_hdl;
@@ -29,7 +32,18 @@ using websocketpp::lib::bind;
 using websocketpp::lib::condition_variable;
 using websocketpp::lib::placeholders::_1;
 using websocketpp::lib::placeholders::_2;
-typedef websocketpp::server<websocketpp::config::asio> server;
+
+struct deflate_server_config : public websocketpp::config::asio
+{
+  struct permessage_deflate_config
+  {
+  };
+
+  typedef websocketpp::extensions::permessage_deflate::enabled<permessage_deflate_config>
+    permessage_deflate_type;
+};
+
+typedef websocketpp::server<deflate_server_config> server;
 
 enum action_type {
   SUBSCRIBE,
@@ -84,6 +98,12 @@ public:
     endpoint_.clear_access_channels(websocketpp::log::alevel::all);
     endpoint_.set_access_channels(websocketpp::log::alevel::access_core);
     endpoint_.set_access_channels(websocketpp::log::alevel::app);
+    endpoint_.set_listen_backlog(128);
+    endpoint_.set_tcp_pre_init_handler([this](connection_hdl hdl) {
+      websocketpp::lib::asio::error_code ec;
+      endpoint_.get_con_from_hdl(hdl)->get_raw_socket().set_option(
+        websocketpp::lib::asio::ip::tcp::no_delay(true));
+    });
 
     // Initialize the Asio transport policy
     endpoint_.init_asio();
@@ -317,7 +337,7 @@ private:
 
   void on_pong_timeout(connection_hdl hdl)
   {
-    if(hdl.expired() || get_con_data(hdl) == nullptr) {
+    if (hdl.expired() || get_con_data(hdl) == nullptr) {
       // TCP connection dropped before timeout and the client is already disposed
       return;
     }
@@ -345,7 +365,11 @@ private:
 // Declare as global so it's accessible inside the signal handler
 std::shared_ptr<ServerNode> g_server_;
 
-void signal_handler(int sig) { (void)sig; g_server_->shutdown(); }
+void signal_handler(int sig)
+{
+  (void)sig;
+  g_server_->shutdown();
+}
 
 int main(int argc, char * argv[])
 {
