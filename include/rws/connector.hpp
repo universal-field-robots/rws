@@ -2,7 +2,11 @@
 #ifndef RWS__CONNECTOR_HPP_
 #define RWS__CONNECTOR_HPP_
 
+#include <atomic>
+#include <chrono>
+#include <functional>
 #include <string>
+#include <thread>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rws/node_interface.hpp"
@@ -69,12 +73,34 @@ public:
 
     bool is_transient_local = qos.durability() == rclcpp::DurabilityPolicy::TransientLocal;
 
-    if (matching_subscriber == nullptr || is_transient_local) {
+    if (matching_subscriber == nullptr) {
       handle.subscription = node_->create_generic_subscription(
         params.topic, params.type, qos,
         std::bind(&Connector::topic_message_callback, this, params, std::placeholders::_1));
     } else {
       handle.subscription = matching_subscriber->subscription;
+
+      if (is_transient_local) {
+        // Make a temporary subscription for the latched topic to ensure the new subscriber gets any existing messages
+        std::thread([=]() {
+          std::atomic<bool> fired = false;
+
+          auto oneshot_sub = node_->create_generic_subscription(
+            params.topic, params.type, qos,
+            std::bind(
+              [&fired, &handler](topic_params & params, std::shared_ptr<const rclcpp::SerializedMessage> message) {
+                handler(params, message);
+
+                fired = true;
+              },params, std::placeholders::_1));
+
+          while (!fired) {
+            std::this_thread::yield();
+          }
+
+          oneshot_sub.reset();
+        }).detach();
+      }
     }
 
     subscribers_.push_back(handle);
