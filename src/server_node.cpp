@@ -174,15 +174,16 @@ public:
 
       lock.unlock();
 
+      // Lock connections here as it is used in all the following branches
+      std::lock_guard<std::mutex> guard(connection_lock_);
       connection_data * cd = get_con_data(a.hdl);
 
       if (a.type == SUBSCRIBE) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
         connections_[a.hdl] = subscribe(a);
       } else if (a.type == UNSUBSCRIBE) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
-        RCLCPP_INFO(get_logger(), "Closing connection with client_id %d", cd->client_id);
-
+        if (cd) {
+          RCLCPP_INFO(get_logger(), "Closing connection with client_id %d", cd->client_id);
+        }
         connections_.erase(a.hdl);
       } else if (a.type == DROP) {
         try {
@@ -192,18 +193,14 @@ public:
           RCLCPP_WARN(get_logger(), "Failed to close connection: %s", e.what());
         }
       } else if (a.type == MESSAGE) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
-
         send_message_to_node(a);
       } else if (a.type == TEXT_REPLY && cd && cd->is_alive) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
         try {
           this->endpoint_.send(a.hdl, a.text_reply, websocketpp::frame::opcode::text);
         } catch (const std::exception & e) {
           RCLCPP_WARN(get_logger(), "Failed to send string reply: %s", e.what());
         }
       } else if (a.type == BINARY_REPLY && cd && cd->is_alive) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
         try {
           this->endpoint_.send(
             a.hdl, a.binary_reply.data(), a.binary_reply.size(),
@@ -352,9 +349,12 @@ private:
 
   void ping_all_clients()
   {
+    std::lock_guard<std::mutex> guard(connection_lock_);
     for (auto & connection : connections_) {
       try {
-        this->endpoint_.ping(connection.first, "");
+        if (!connection.first.expired()) {
+          this->endpoint_.ping(connection.first, "");
+        }
       } catch (const std::exception & e) {
         RCLCPP_WARN(get_logger(), "Failed to send ping: %s", e.what());
       }
