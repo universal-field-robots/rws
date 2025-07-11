@@ -7,6 +7,8 @@ endif()
 
 cmake_policy(SET CMP0135 NEW)
 
+find_package(ZLIB REQUIRED)
+
 ### Fetch JSON at configure time
 include(FetchContent)
 fetchcontent_declare(json URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz)
@@ -41,7 +43,7 @@ add_definitions(
 )
 fetchcontent_declare(websocketpp
 GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
-  GIT_TAG 0.8.2)
+  GIT_TAG b9aeec6eaf3d5610503439b4fae3581d9aff08e8)
 fetchcontent_getproperties(websocketpp)
 if(NOT websocketpp_POPULATED)
   fetchcontent_populate(websocketpp)
@@ -72,7 +74,7 @@ target_include_directories(rws_server PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<INSTALL_INTERFACE:include>)
 target_compile_features(rws_server PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-target_link_libraries(rws_server CycloneDDS::ddsc asio websocketpp nlohmann_json::nlohmann_json)
+target_link_libraries(rws_server CycloneDDS::ddsc asio websocketpp nlohmann_json::nlohmann_json ZLIB::ZLIB)
 
 install(TARGETS rws_server
   DESTINATION lib/${PROJECT_NAME})

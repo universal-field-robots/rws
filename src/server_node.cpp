@@ -15,21 +15,35 @@
 #include <cstdio>
 #include <nlohmann/json.hpp>
 #include <websocketpp/config/asio_no_tls.hpp>
+#include <websocketpp/extensions/permessage_deflate/enabled.hpp>
 #include <websocketpp/server.hpp>
 
+#include "asio/error_code.hpp"
 #include "rclcpp/executors.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rws/client_handler.hpp"
 #include "rws/connector.hpp"
 #include "rws/node_interface_impl.hpp"
+#include "websocketpp/common/connection_hdl.hpp"
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 using websocketpp::connection_hdl;
 using websocketpp::lib::bind;
 using websocketpp::lib::condition_variable;
 using websocketpp::lib::placeholders::_1;
 using websocketpp::lib::placeholders::_2;
-typedef websocketpp::server<websocketpp::config::asio> server;
+
+struct deflate_server_config : public websocketpp::config::asio
+{
+  struct permessage_deflate_config
+  {
+  };
+
+  typedef websocketpp::extensions::permessage_deflate::enabled<permessage_deflate_config>
+    permessage_deflate_type;
+};
+
+typedef websocketpp::server<deflate_server_config> server;
 
 enum action_type {
   SUBSCRIBE,
@@ -84,6 +98,12 @@ public:
     endpoint_.clear_access_channels(websocketpp::log::alevel::all);
     endpoint_.set_access_channels(websocketpp::log::alevel::access_core);
     endpoint_.set_access_channels(websocketpp::log::alevel::app);
+    endpoint_.set_listen_backlog(128);
+    endpoint_.set_tcp_pre_init_handler([this](connection_hdl hdl) {
+      websocketpp::lib::asio::error_code ec;
+      endpoint_.get_con_from_hdl(hdl)->get_raw_socket().set_option(
+        websocketpp::lib::asio::ip::tcp::no_delay(true));
+    });
 
     // Initialize the Asio transport policy
     endpoint_.init_asio();
@@ -154,15 +174,16 @@ public:
 
       lock.unlock();
 
+      // Lock connections here as it is used in all the following branches
+      std::lock_guard<std::mutex> guard(connection_lock_);
       connection_data * cd = get_con_data(a.hdl);
 
       if (a.type == SUBSCRIBE) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
         connections_[a.hdl] = subscribe(a);
       } else if (a.type == UNSUBSCRIBE) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
-        RCLCPP_INFO(get_logger(), "Closing connection with client_id %d", cd->client_id);
-
+        if (cd) {
+          RCLCPP_INFO(get_logger(), "Closing connection with client_id %d", cd->client_id);
+        }
         connections_.erase(a.hdl);
       } else if (a.type == DROP) {
         try {
@@ -172,18 +193,14 @@ public:
           RCLCPP_WARN(get_logger(), "Failed to close connection: %s", e.what());
         }
       } else if (a.type == MESSAGE) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
-
         send_message_to_node(a);
       } else if (a.type == TEXT_REPLY && cd && cd->is_alive) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
         try {
           this->endpoint_.send(a.hdl, a.text_reply, websocketpp::frame::opcode::text);
         } catch (const std::exception & e) {
           RCLCPP_WARN(get_logger(), "Failed to send string reply: %s", e.what());
         }
       } else if (a.type == BINARY_REPLY && cd && cd->is_alive) {
-        std::lock_guard<std::mutex> guard(connection_lock_);
         try {
           this->endpoint_.send(
             a.hdl, a.binary_reply.data(), a.binary_reply.size(),
@@ -317,7 +334,7 @@ private:
 
   void on_pong_timeout(connection_hdl hdl)
   {
-    if(hdl.expired() || get_con_data(hdl) == nullptr) {
+    if (hdl.expired() || get_con_data(hdl) == nullptr) {
       // TCP connection dropped before timeout and the client is already disposed
       return;
     }
@@ -332,9 +349,12 @@ private:
 
   void ping_all_clients()
   {
+    std::lock_guard<std::mutex> guard(connection_lock_);
     for (auto & connection : connections_) {
       try {
-        this->endpoint_.ping(connection.first, "");
+        if (!connection.first.expired()) {
+          this->endpoint_.ping(connection.first, "");
+        }
       } catch (const std::exception & e) {
         RCLCPP_WARN(get_logger(), "Failed to send ping: %s", e.what());
       }
@@ -345,7 +365,11 @@ private:
 // Declare as global so it's accessible inside the signal handler
 std::shared_ptr<ServerNode> g_server_;
 
-void signal_handler(int sig) { (void)sig; g_server_->shutdown(); }
+void signal_handler(int sig)
+{
+  (void)sig;
+  g_server_->shutdown();
+}
 
 int main(int argc, char * argv[])
 {

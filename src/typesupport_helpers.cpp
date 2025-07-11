@@ -52,11 +52,17 @@ std::string get_typesupport_library_path(
     throw std::runtime_error(e.what());
   }
 
-  const std::string library_path = rcpputils::path_for_library(
+  // Some services have libraries in package_name_msgs instead of just pacakge_name
+  std::string library_path = rcpputils::path_for_library(
     package_prefix + dynamic_library_folder, package_name + "__" + typesupport_identifier);
   if (library_path.empty()) {
-    throw std::runtime_error(
-      "Typesupport library for " + package_name + " does not exist in '" + package_prefix + "'.");
+    library_path = rcpputils::path_for_library(
+      package_prefix + dynamic_library_folder, package_name + "_msgs__" + typesupport_identifier);
+    if (library_path.empty()) {
+      throw std::runtime_error(
+        "Typesupport library for " + package_name + " does not exist in '" + package_prefix +
+        dynamic_library_folder + "'.");
+    }
   }
   return library_path;
 }
@@ -110,15 +116,6 @@ const rosidl_service_type_support_t * get_service_typesupport_handle(
   std::string type_name;
   std::tie(package_name, middle_module, type_name) = extract_type_identifier(type);
 
-  auto mk_error =
-    [&package_name, &type_name](auto reason) {
-      std::stringstream rcutils_dynamic_loading_error;
-      rcutils_dynamic_loading_error
-        << "Something went wrong loading the typesupport library for message type " << package_name
-        << "/" << type_name << ". " << reason;
-      return rcutils_dynamic_loading_error.str();
-    };
-
   try {
     std::string symbol_name = typesupport_identifier + "__get_service_type_support_handle__" +
                               package_name + "__" +
@@ -129,7 +126,15 @@ const rosidl_service_type_support_t * get_service_typesupport_handle(
     get_ts = reinterpret_cast<decltype(get_ts)>(library.get_symbol(symbol_name));
     return get_ts();
   } catch (std::runtime_error &) {
-    throw std::runtime_error{mk_error("Library could not be found.")};
+  // Some services have libraries in package_name_msgs instead of just pacakge_name
+    std::string symbol_name = typesupport_identifier + "__get_service_type_support_handle__" +
+                              package_name + "_msgs__" +
+                              (middle_module.empty() ? "srv" : middle_module) + "__" + type_name;
+
+    const rosidl_service_type_support_t * (*get_ts)() = nullptr;
+    // This will throw runtime_error if the symbol was not found.
+    get_ts = reinterpret_cast<decltype(get_ts)>(library.get_symbol(symbol_name));
+    return get_ts();
   }
 }
 

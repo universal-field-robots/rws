@@ -2,7 +2,11 @@
 #ifndef RWS__CONNECTOR_HPP_
 #define RWS__CONNECTOR_HPP_
 
+#include <atomic>
+#include <chrono>
+#include <functional>
 #include <string>
+#include <thread>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rws/node_interface.hpp"
@@ -64,15 +68,41 @@ public:
     for(const auto& node : info)
     {
       qos.durability(node.qos_profile().get_rmw_qos_profile().durability);
+      qos.reliability(node.qos_profile().get_rmw_qos_profile().reliability);
     }
+
     bool is_transient_local = qos.durability() == rclcpp::DurabilityPolicy::TransientLocal;
 
-    if (matching_subscriber == nullptr || is_transient_local) {
+    if (matching_subscriber == nullptr) {
       handle.subscription = node_->create_generic_subscription(
         params.topic, params.type, qos,
         std::bind(&Connector::topic_message_callback, this, params, std::placeholders::_1));
     } else {
       handle.subscription = matching_subscriber->subscription;
+
+      if (is_transient_local) {
+        // Make a temporary subscription for the latched topic to ensure the new subscriber gets any existing messages
+        std::thread([=]() {
+          std::atomic<bool> fired = false;
+          std::mutex mtx;
+          std::condition_variable cv;
+
+          auto oneshot_sub = node_->create_generic_subscription(
+            params.topic, params.type, qos,
+            std::bind(
+              [&fired, &handler, &cv](topic_params & params, std::shared_ptr<const rclcpp::SerializedMessage> message) {
+                handler(params, message);
+                fired = true;
+                cv.notify_one();  // wake up the waiting thread
+              }, params, std::placeholders::_1));
+
+          std::unique_lock<std::mutex> lock(mtx);
+          // sleep until fired is set to true
+          cv.wait(lock, [&fired]{ return fired.load(); });
+
+          oneshot_sub.reset();
+        }).detach();
+      }
     }
 
     subscribers_.push_back(handle);
@@ -181,6 +211,7 @@ private:
 
   void topic_message_callback(topic_params & params, std::shared_ptr<const rclcpp::SerializedMessage> message)
   {
+    std::lock_guard<std::mutex> guard(subscribers_mutex_);
     for (auto & sub : subscribers_) {
       if (sub.params == params &&
           (params.throttle_rate.nanoseconds() == 0 || (sub.last_sent + params.throttle_rate) < node_->now())) {

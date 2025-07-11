@@ -18,12 +18,13 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
+#include "nlohmann/json_fwd.hpp"
 #include "rclcpp/serialized_message.hpp"
 
 namespace rws
 {
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 using SharedMessage = std::shared_ptr<rclcpp::SerializedMessage>;
 using ConstSharedMessage = std::shared_ptr<const rclcpp::SerializedMessage>;
 
