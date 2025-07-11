@@ -84,19 +84,21 @@ public:
         // Make a temporary subscription for the latched topic to ensure the new subscriber gets any existing messages
         std::thread([=]() {
           std::atomic<bool> fired = false;
+          std::mutex mtx;
+          std::condition_variable cv;
 
           auto oneshot_sub = node_->create_generic_subscription(
             params.topic, params.type, qos,
             std::bind(
-              [&fired, &handler](topic_params & params, std::shared_ptr<const rclcpp::SerializedMessage> message) {
+              [&fired, &handler, &cv](topic_params & params, std::shared_ptr<const rclcpp::SerializedMessage> message) {
                 handler(params, message);
-
                 fired = true;
-              },params, std::placeholders::_1));
+                cv.notify_one();  // wake up the waiting thread
+              }, params, std::placeholders::_1));
 
-          while (!fired) {
-            std::this_thread::yield();
-          }
+          std::unique_lock<std::mutex> lock(mtx);
+          // sleep until fired is set to true
+          cv.wait(lock, [&fired]{ return fired.load(); });
 
           oneshot_sub.reset();
         }).detach();
