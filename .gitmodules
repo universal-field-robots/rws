@@ -1,0 +1,6 @@
+[submodule "rws_deps/websocketpp"]
+	path = rws_deps/websocketpp
+	url = https://github.com/zaphoyd/websocketpp.git
+[submodule "rws_deps/asio"]
+	path = rws_deps/asio
+	url = https://github.com/chriskohlhoff/asio.git
