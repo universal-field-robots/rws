@@ -9,22 +9,19 @@ cmake_policy(SET CMP0135 NEW)
 
 find_package(ZLIB REQUIRED)
 
-### Fetch JSON at configure time
 include(FetchContent)
-fetchcontent_declare(json URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz)
-fetchcontent_makeavailable(json)
-# /JSON
 
-### Fetch ASIO at configure time
+### JSON
+find_package(nlohmann_json REQUIRED)
+
+### ASIO
 add_definitions(
   # Complile ASIO without Boost
   -DBOOST_DATE_TIME_NO_LIB
   -DBOOST_REGEX_NO_LIB
   -DASIO_STANDALONE
 )
-fetchcontent_declare(asio
-  GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
-  GIT_TAG asio-1-24-0)
+fetchcontent_declare(asio URL ${CMAKE_SOURCE_DIR}/rws_deps/asio)
 
 fetchcontent_getproperties(asio)
 if(NOT asio_POPULATED)
@@ -35,15 +32,14 @@ add_library(asio INTERFACE)
 target_include_directories(asio INTERFACE ${asio_SOURCE_DIR}/asio/include)
 # /ASIO
 
-### Fetch ASIO at configure time
+### WEBSOCKETPP
 add_definitions(
   # Compile websocketpp with C++11
   -D_WEBSOCKETPP_CPP11_STL_
   -D_WEBSOCKETPP_CPP11_FUNCTIONAL_
 )
-fetchcontent_declare(websocketpp
-GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
-  GIT_TAG b9aeec6eaf3d5610503439b4fae3581d9aff08e8)
+fetchcontent_declare(websocketpp URL ${CMAKE_SOURCE_DIR}/rws_deps/websocketpp)
+
 fetchcontent_getproperties(websocketpp)
 if(NOT websocketpp_POPULATED)
   fetchcontent_populate(websocketpp)
