@@ -83,23 +83,24 @@ public:
       if (is_transient_local) {
         // Make a temporary subscription for the latched topic to ensure the new subscriber gets any existing messages
         std::thread([=]() {
-          std::atomic<bool> fired = false;
-          std::mutex mtx;
-          std::condition_variable cv;
+          std::promise<void> promise;
+          std::atomic<bool> promise_set{false};
+          auto future = promise.get_future();
 
           auto oneshot_sub = node_->create_generic_subscription(
             params.topic, params.type, qos,
             std::bind(
-              [&fired, &handler, &cv](topic_params & params, std::shared_ptr<const rclcpp::SerializedMessage> message) {
-                handler(params, message);
-                fired = true;
-                cv.notify_one();  // wake up the waiting thread
-              }, params, std::placeholders::_1));
+              [&handler, &promise_set, &promise](
+                topic_params & params, std::shared_ptr<const rclcpp::SerializedMessage> message) {
+                // Ensure promise.set_value() is called only once
+                if (!promise_set.exchange(true)) {
+                  handler(params, message);
+                  promise.set_value();
+                }
+              },
+              params, std::placeholders::_1));
 
-          std::unique_lock<std::mutex> lock(mtx);
-          // sleep until fired is set to true
-          cv.wait(lock, [&fired]{ return fired.load(); });
-
+          future.wait();
           oneshot_sub.reset();
         }).detach();
       }
