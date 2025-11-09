@@ -11,6 +11,8 @@ include(FetchContent)
 
 ### JSON
 find_package(nlohmann_json REQUIRED)
+fetchcontent_declare(nlohmann_json URL ${CMAKE_SOURCE_DIR}/rws_deps/json)
+fetchcontent_makeavailable(nlohmann_json)
 
 ### ASIO
 add_definitions(
