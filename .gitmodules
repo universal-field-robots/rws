@@ -4,6 +4,3 @@
 [submodule "rws_deps/asio"]
 	path = rws_deps/asio
 	url = https://github.com/chriskohlhoff/asio.git
-[submodule "rws_deps/json"]
-	path = rws_deps/json
-	url = https://github.com/nlohmann/json.git

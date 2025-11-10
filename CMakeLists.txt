@@ -10,9 +10,16 @@ find_package(ZLIB REQUIRED)
 include(FetchContent)
 
 ### JSON
-find_package(nlohmann_json REQUIRED)
-fetchcontent_declare(nlohmann_json URL ${CMAKE_SOURCE_DIR}/rws_deps/json)
-fetchcontent_makeavailable(nlohmann_json)
+fetchcontent_declare(json URL ${CMAKE_SOURCE_DIR}/rws_deps/json)
+fetchcontent_getproperties(json)
+if(NOT json_POPULATED)
+  fetchcontent_populate(json)
+  add_subdirectory(${json_SOURCE_DIR} ${json_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
+
+add_library(json INTERFACE)
+target_include_directories(json INTERFACE ${json_SOURCE_DIR}/include)
+# /JSON
 
 ### ASIO
 add_definitions(
@@ -70,7 +77,7 @@ target_include_directories(rws_server PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<INSTALL_INTERFACE:include>)
 target_compile_features(rws_server PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-target_link_libraries(rws_server CycloneDDS::ddsc asio websocketpp nlohmann_json::nlohmann_json ZLIB::ZLIB)
+target_link_libraries(rws_server CycloneDDS::ddsc asio websocketpp json ZLIB::ZLIB)
 
 install(TARGETS rws_server
   DESTINATION lib/${PROJECT_NAME})
@@ -107,7 +114,7 @@ if(BUILD_TESTING)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:include>)
-  target_link_libraries(rws_translate_test CycloneDDS::ddsc nlohmann_json::nlohmann_json)
+  target_link_libraries(rws_translate_test CycloneDDS::ddsc json)
 
   # rws_typesupport_helpers_test
   ament_add_gtest(rws_typesupport_helpers_test
@@ -146,7 +153,7 @@ if(BUILD_TESTING)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/mocks>
     $<INSTALL_INTERFACE:include>)
-  target_link_libraries(client_handler_test CycloneDDS::ddsc nlohmann_json::nlohmann_json)
+  target_link_libraries(client_handler_test CycloneDDS::ddsc json)
 endif()
 
 ament_package()
