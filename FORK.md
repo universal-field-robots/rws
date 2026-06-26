@@ -38,8 +38,15 @@ We do **not** track upstream wholesale — we cherry-pick.
 ### Connector (`include/rws/connector.hpp`)
 - **`subscribers_mutex_` held in `topic_message_callback`** — upstream removed this
   lock (it iterates `subscribers_` unlocked, racing subscribe/unsubscribe). We keep it.
-- Latched-topic replay for a late subscriber reusing a shared subscription (the
-  one-shot helper subscription) — see "Known issues".
+- **Latched-topic replay (bounded one-shot)** — when a late subscriber reuses an
+  existing shared subscription it would miss the latched sample. We spin up a
+  temporary transient-local subscription that replays the latched value from DDS to
+  just that subscriber, then tear it down. The original blocked on `future.wait()`
+  forever (leaking the thread/subscription if nothing was ever latched); it now uses
+  a bounded `future.wait_for(2s)` — long enough for DDS to deliver an existing
+  latched sample, after which the temp subscription is reset. The "subscribe before
+  the publisher exists" case is handled by the shared subscription's fan-out, not by
+  this one-shot. (Upstream removed this replay entirely.)
 
 ---
 
@@ -85,10 +92,6 @@ Targeted at the two problems the GUI hit. Builds clean on Jazzy
   *Planned: try/catch + error response.*
 - **`DROP` branch null-deref** in `process_messages` (`cd->is_alive` with no guard).
   *Planned: add `if (cd)`.*
-- **Latched one-shot replay** (`connector.hpp`) uses a detached thread that
-  `future.wait()`s forever if nothing is latched — can leak in the rare multi-client
-  late-join case. *Planned: make the one-shot owned by the subscriber handle (no
-  thread, no timeout), paired with the client-QoS work.*
 
 A single GUI refresh drops all subscriptions and re-subscribes, which always creates
 fresh transient-local subscriptions — latched values come straight from DDS on that

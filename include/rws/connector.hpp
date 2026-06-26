@@ -100,7 +100,13 @@ public:
               },
               params, std::placeholders::_1));
 
-          future.wait();
+          // Wait for the latched sample, then tear the temporary subscription
+          // down. A real latched sample is delivered almost immediately on QoS
+          // match, so a bounded wait is enough; if nothing arrives there is
+          // nothing latched and we must not block/leak this thread forever (the
+          // "subscribe before the publisher exists" case is covered by the shared
+          // subscription's fan-out, not by this one-shot).
+          future.wait_for(std::chrono::seconds(2));
           oneshot_sub.reset();
         }).detach();
       }
