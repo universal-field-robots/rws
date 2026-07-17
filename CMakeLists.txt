@@ -54,6 +54,8 @@ set(DEPENDENCIES
   rclcpp
   ament_index_cpp
   CycloneDDS
+  rcpputils
+  rosidl_typesupport_introspection_cpp
 )
 
 # Find ROS dependencies
@@ -61,6 +63,32 @@ find_package(ament_cmake REQUIRED)
 foreach(Dependency IN ITEMS ${DEPENDENCIES})
   find_package(${Dependency} REQUIRED)
 endforeach()
+
+# Exported library: JSON <-> SerializedMessage translation for runtime
+# (introspection-based) message construction, reusable by other packages.
+add_library(rws_translate SHARED
+  src/translate.cpp
+  src/serdes.cpp
+  src/typesupport_helpers.cpp
+)
+ament_target_dependencies(rws_translate ${DEPENDENCIES})
+target_include_directories(rws_translate PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(rws_translate PUBLIC c_std_99 cxx_std_17)
+target_link_libraries(rws_translate CycloneDDS::ddsc nlohmann_json::nlohmann_json)
+
+install(TARGETS rws_translate
+  EXPORT export_rws_translate
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+install(DIRECTORY include/ DESTINATION include)
+
+ament_export_targets(export_rws_translate HAS_LIBRARY_TARGET)
+ament_export_dependencies(${DEPENDENCIES} nlohmann_json)
 
 file(GLOB SRCFILES src/*.*pp)
 add_executable(rws_server ${SRCFILES})
