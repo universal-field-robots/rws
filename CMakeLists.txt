@@ -137,6 +137,7 @@ if(BUILD_TESTING)
     test/client_handler_test.cpp
     src/client_handler.cpp
     src/rosapi_params.cpp
+    src/rosapi_introspection.cpp
     src/typesupport_helpers.cpp
     src/translate.cpp
     src/serdes.cpp
@@ -163,6 +164,19 @@ if(BUILD_TESTING)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:include>)
   target_link_libraries(rosapi_params_test CycloneDDS::ddsc nlohmann_json::nlohmann_json)
+
+  # rosapi_introspection_test
+  ament_add_gtest(rosapi_introspection_test
+    test/rosapi_introspection_test.cpp
+    src/rosapi_introspection.cpp
+    src/typesupport_helpers.cpp
+  )
+  ament_target_dependencies(rosapi_introspection_test ${DEPENDENCIES})
+  target_include_directories(rosapi_introspection_test PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include>)
+  target_link_libraries(rosapi_introspection_test nlohmann_json::nlohmann_json)
 endif()
 
 ament_package()

@@ -63,6 +63,20 @@ We do **not** track upstream wholesale — we cherry-pick.
   divergence: python's `set_param` re-parsed a JSON *string* value through YAML (so
   `"5"` silently became the integer 5); we map JSON types directly.
 
+### Remaining rosapi services in C++ (`src/rosapi_introspection.cpp`)
+- Completes the rosapi surface so the python rosapi node / rosbridge can be dropped
+  entirely: `/rosapi/services`, `topics_for_type`, `action_servers`,
+  `service_providers`, `service_node`, `get_time`, `get_ros_version`,
+  `message_details`, `service_request_details`, `service_response_details`. All
+  answered synchronously from the local graph cache / introspection typesupport.
+- TypeDef responses: `constnames`/`constvalues` are always empty (introspection
+  typesupport doesn't expose constants; python read them off the message class).
+  Field/type names use `pkg/msg/Type` form self-consistently, and
+  `builtin_interfaces/msg/Time` fields are emitted as `secs`/`nsecs` when
+  rosbridge-compatible, matching the wire mapping in `translate.cpp`.
+- Deliberate fix vs python: `service_providers` matches by service **name** (the
+  .srv field); python accidentally matched by service *type*.
+
 ---
 
 ## Fixes on branch `jazzy-service-subscribe-fixes` (commit `04d9aa0`)

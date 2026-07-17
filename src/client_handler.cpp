@@ -48,7 +48,8 @@ ClientHandler::ClientHandler(
   binary_callback_(binary_callback),
   // Deferred param responses must outlive this handler, so RosapiParams gets
   // the raw transport callback rather than a wrapper around this object.
-  rosapi_params_(node, callback)
+  rosapi_params_(node, callback),
+  rosapi_introspection_(node, rosbridge_compatible)
 {
   RCLCPP_INFO(
     get_logger(), "Constructing client %s(%s)", std::to_string(client_id_).c_str(),
@@ -487,6 +488,10 @@ bool ClientHandler::call_service(const json & msg, json & response)
   }
 
   if (rosapi_params_.handle_service_call(msg, response)) {
+    return true;
+  }
+
+  if (rosapi_introspection_.handle_service_call(msg, response)) {
     return true;
   }
 
