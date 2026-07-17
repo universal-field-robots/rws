@@ -48,6 +48,21 @@ We do **not** track upstream wholesale — we cherry-pick.
   the publisher exists" case is handled by the shared subscription's fan-out, not by
   this one-shot. (Upstream removed this replay entirely.)
 
+### Native rosapi param services (`src/rosapi_params.cpp`, upstream has nothing like it)
+- rws now answers `/rosapi/get_param`, `set_param`, `has_param`, `delete_param` and
+  `get_param_names` itself (intercepted in `call_service` before the external-service
+  fallthrough), replacing the python `rosapi` node for params. The python version
+  serialized every call behind a global lock with a blocking 5s `wait_for_service`,
+  so one lookup of a missing param stalled all other GUI param calls for 5s.
+- Each call goes through an **async generic client** to the target node's own
+  parameter services (`<node>/get_parameters` etc.); nodes not on the graph are
+  answered **immediately** with the default. `get_param_names` fans out to all nodes
+  concurrently with a 2s watchdog so one hung node can't hang the request.
+- Wire contract is byte-compatible with python rosapi (`"<node>:<param>"` names,
+  JSON-encoded string values), so `roslibjs`/GUI needed **no changes**. One deliberate
+  divergence: python's `set_param` re-parsed a JSON *string* value through YAML (so
+  `"5"` silently became the integer 5); we map JSON types directly.
+
 ---
 
 ## Fixes on branch `jazzy-service-subscribe-fixes` (commit `04d9aa0`)
