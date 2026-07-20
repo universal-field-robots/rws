@@ -77,6 +77,20 @@ We do **not** track upstream wholesale — we cherry-pick.
 - Deliberate fix vs python: `service_providers` matches by service **name** (the
   .srv field); python accidentally matched by service *type*.
 
+### ROS 2 action client support (`src/action_handler.cpp`, upstream has nothing like it)
+- New ops `send_action_goal` / `cancel_action_goal`; rws streams back
+  `action_feedback` per feedback message and a terminal `action_result`
+  (with GoalStatus), all correlated by the client-chosen `id`. Matches upstream
+  rosbridge op naming; our `roslibjs` fork gained a matching `Action` class.
+- Built on the action's underlying interfaces — `<action>/_action/send_goal` /
+  `get_result` / `cancel_goal` services via `GenericClient` and a generic
+  subscription on `<action>/_action/feedback` filtered by goal UUID — because
+  rcl_action has no type-erased client. `action_type` may be omitted; it is
+  then resolved from the feedback topic's type on the graph.
+- Failure paths (unknown action, server not ready, goal rejected) always emit
+  an `action_result` with `result: false` so the GUI never hangs. Concurrent
+  goals on one action are supported (one feedback subscription per goal).
+
 ---
 
 ## Fixes on branch `jazzy-service-subscribe-fixes` (commit `04d9aa0`)

@@ -136,6 +136,7 @@ if(BUILD_TESTING)
   ament_add_gmock(client_handler_test
     test/client_handler_test.cpp
     src/client_handler.cpp
+    src/action_handler.cpp
     src/rosapi_params.cpp
     src/rosapi_introspection.cpp
     src/typesupport_helpers.cpp
