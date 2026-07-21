@@ -183,13 +183,31 @@ bool ClientHandler::subscribe_to_topic(const json & msg, json & response)
 
   std::string topic = msg["topic"];
   std::map<std::string, std::vector<std::string>> topics = node_->get_topic_names_and_types();
-  if (topics.find(topic) == topics.end()) {
-    response["error"] = "Topic " + topic + " not found";
+
+  std::string sub_type;
+  auto topic_it = topics.find(topic);
+  if (topic_it != topics.end() && !topic_it->second.empty()) {
+    // Type discovered from the live ROS graph.
+    sub_type = topic_it->second[0];
+  } else if (msg.contains("type") && msg["type"].is_string()) {
+    // Topic has no publisher yet. Rosbridge clients may subscribe ahead of the
+    // publisher by supplying the message type; honour it so the subscription
+    // starts delivering once a publisher appears. This also stops clients that
+    // periodically retry the subscription from spamming the log with errors.
+    sub_type = rws::message_type_to_ros2_style(msg["type"]);
+    RCLCPP_INFO(
+      get_logger(), "Topic '%s' not yet advertised; subscribing with provided type '%s'",
+      topic.c_str(), sub_type.c_str());
+  } else {
+    static rclcpp::Clock throttle_clock(RCL_STEADY_TIME);
+    response["error"] = "Topic " + topic + " not found and no type provided";
     response["result"] = false;
-    RCLCPP_ERROR(
-      get_logger(), "Failed to subscribe to topic: %s", response["error"].dump().c_str());
+    RCLCPP_ERROR_THROTTLE(
+      get_logger(), throttle_clock, 5000, "Failed to subscribe to topic: %s",
+      response["error"].dump().c_str());
     return true;
   }
+
   size_t history_depth = 10;
   if (msg.contains("history_depth") && msg["history_depth"].is_number()) {
     history_depth = msg["history_depth"];
@@ -204,16 +222,16 @@ bool ClientHandler::subscribe_to_topic(const json & msg, json & response)
   std::string compression =
     (!msg.contains("compression") || !msg["compression"].is_string()) ? "none" : msg["compression"];
 
-  auto sub_type = topics[topic][0];
   if (subscriptions_.count(topic) == 0) {
-    
     topic_params params(topic, sub_type, history_depth, compression, throttle_rate);
     subscriptions_[topic] = connector_->subscribe_to_topic(
       client_id_, params, std::bind(&ClientHandler::subscription_callback, this, std::placeholders::_1, std::placeholders::_2));
-
-    response["type"] = sub_type;
-    response["result"] = true;
   }
+
+  // Always acknowledge, even if the subscription already existed, so the client
+  // isn't left waiting for a response on a repeated subscribe.
+  response["type"] = sub_type;
+  response["result"] = true;
 
   return true;
 }
@@ -471,46 +489,81 @@ bool ClientHandler::call_service(const json & msg, json & response)
 bool ClientHandler::call_external_service(const json & msg, json & response)
 {
   std::string service_name = msg["service"];
-  std::string service_type = msg["type"];
 
+  response["op"] = "service_response";
+  response["service"] = service_name;
+  response["result"] = false;
+
+  // A generic client must be built from the service type that is actually
+  // advertised on the ROS graph (e.g. "automine_msgs/srv/GetRobotDescription").
+  // The type a rosbridge client sends (if any) is a ROS1-style hint (e.g.
+  // "automine_msgs/GetRobotDescription") whose package layout doesn't match the
+  // ROS2 typesupport library, so it can't be used to look up typesupport.
+  // Resolving from the graph is therefore both more correct and the only thing
+  // that reliably works.
   std::map<std::string, std::vector<std::string>> services = node_->get_service_names_and_types();
-  if (services.find(service_name) == services.end()) {
-    RCLCPP_ERROR(get_logger(), "Service not found: %s", service_name.c_str());
-    return false;
+  auto svc_it = services.find(service_name);
+  if (svc_it == services.end() || svc_it->second.empty()) {
+    response["error"] = "Service " + service_name + " not available";
+    RCLCPP_ERROR(get_logger(), "%s", response["error"].get<std::string>().c_str());
+    // Return handled so the (failed) response is sent back; otherwise the client
+    // waits forever for a reply that never comes.
+    return true;
   }
+  std::string service_type = svc_it->second[0];
 
-  if (clients_.count(service_name) == 0) {
-    clients_[service_name] = node_->create_generic_client(
-      service_name, service_type, rmw_qos_profile_services_default, nullptr);
-  }
-
-  while (!clients_[service_name]->wait_for_service(1s)) {
-    if (!rclcpp::ok()) {
-      RCLCPP_ERROR(get_logger(), "Interrupted while waiting for the service. Exiting.");
-      response["result"] = false;
-      return false;
+  try {
+    if (clients_.count(service_name) == 0) {
+      clients_[service_name] = node_->create_generic_client(
+        service_name, service_type, rmw_qos_profile_services_default, nullptr);
     }
-    RCLCPP_INFO(get_logger(), "service not available, waiting again...");
+
+    // The service is on the graph, so it should become ready almost immediately.
+    // Bound the wait so a momentarily-unavailable service can't block the single
+    // message-processing thread (and therefore every other client) indefinitely.
+    if (!clients_[service_name]->wait_for_service(5s)) {
+      response["error"] = "Service " + service_name + " did not become ready";
+      RCLCPP_ERROR(get_logger(), "%s", response["error"].get<std::string>().c_str());
+      return true;
+    }
+
+    const json & args = msg.contains("args") ? msg["args"] : json::object();
+    auto serialized_req = json_to_serialized_service_request(service_type, args);
+
+    using ServiceResponseFuture = rws::GenericClient::SharedFuture;
+    auto response_received_callback = [this, id = msg.value("id", json()), service_name,
+                                       service_type](ServiceResponseFuture future) {
+      // This runs on an executor thread; an uncaught exception here would tear
+      // down the executor, so translate failures into an error response instead.
+      json m = {
+        {"id", id},
+        {"op", "service_response"},
+        {"service", service_name},
+      };
+      try {
+        m["values"] = serialized_service_response_to_json(service_type, future.get());
+        m["result"] = true;
+      } catch (const std::exception & e) {
+        m["result"] = false;
+        m["error"] = std::string("Failed to deserialize service response: ") + e.what();
+        RCLCPP_ERROR(get_logger(), "%s", m["error"].get<std::string>().c_str());
+      }
+      std::string json_str = m.dump();
+      this->send_message(json_str);
+    };
+    clients_[service_name]->async_send_request(serialized_req, response_received_callback);
+  } catch (const std::exception & e) {
+    // Drop a possibly half-initialised client so a later call can rebuild it.
+    clients_.erase(service_name);
+    response["error"] = std::string("Failed to call service ") + service_name + ": " + e.what();
+    RCLCPP_ERROR(get_logger(), "%s", response["error"].get<std::string>().c_str());
+    return true;
   }
 
-  auto serialized_req = json_to_serialized_service_request(service_type, msg["args"]);
-  using ServiceResponseFuture = rws::GenericClient::SharedFuture;
-  auto response_received_callback = [this, id = msg["id"], service_name,
-                                     service_type](ServiceResponseFuture future) {
-    json response_json = serialized_service_response_to_json(service_type, future.get());
-    json m = {
-      {"id", id},
-      {"op", "service_response"},
-      {"service", service_name},
-      {"values", response_json},
-      {"result", true},
-    };
-
-    std::string json_str = m.dump();
-    this->send_message(json_str);
-  };
-  clients_[service_name]->async_send_request(serialized_req, response_received_callback);
-
+  // Request dispatched successfully. Acknowledge synchronously; the real result
+  // is delivered asynchronously from response_received_callback once the service
+  // replies. (op "call_service" so the client doesn't mistake this ack for the
+  // actual "service_response".)
   response["op"] = "call_service";
   response["result"] = true;
   return true;
