@@ -67,8 +67,8 @@ TEST_F(TranslateFixture, RosbridgeCompatibleDescriptionHasRenamedNanosecondsFiel
     "uint32 line\n"
     "============\n"
     "MSG: builtin_interfaces/msg/Time\n"
-    "int32 sec\n"
-    "uint32 nsec\n";  // <--- renamed from nanosec to nsec
+    "int32 secs\n"
+    "uint32 nsecs\n";  // <--- fork renames sec/nanosec to secs/nsecs to match roslibjs
 
   EXPECT_EQ(msg_desc, expected);
 }
@@ -238,8 +238,10 @@ TEST_F(TranslateFixture, DeserializeRclInterfacesLogMessage)
   static rclcpp::Serialization<rcl_interfaces::msg::Log> serializer;
   serializer.serialize_message(log_msg.get(), &*serialized_msg);
 
+  // ordered_json preserves message-definition field order (a fork feature), so
+  // the expected object is written in that order, not alphabetically.
   std::string expected_json_str =
-    R"({"file":"/src/client_handler.cpp","function":"process_message","level":1,"line":1,"msg":"process_message: {\"args\":{},\"id\":\"call_service:/rosapi/topics_and_raw_types:1\",\"op\":\"call_service\",\"service\":\"/rosapi/topics_and_raw_types\",\"type\":\"rosapi/TopicsAndRawTypes\"}","name":"client_handler","stamp":{"nanosec":0,"sec":0}})";
+    R"({"stamp":{"sec":0,"nanosec":0},"level":1,"name":"client_handler","msg":"process_message: {\"args\":{},\"id\":\"call_service:/rosapi/topics_and_raw_types:1\",\"op\":\"call_service\",\"service\":\"/rosapi/topics_and_raw_types\",\"type\":\"rosapi/TopicsAndRawTypes\"}","file":"/src/client_handler.cpp","function":"process_message","line":1})";
   json expected = json::parse(expected_json_str);
 
   auto log_msg_json = rws::serialized_message_to_json("rcl_interfaces/msg/Log", serialized_msg);
