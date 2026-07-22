@@ -45,7 +45,12 @@ ClientHandler::ClientHandler(
   connector_(connector),
   rosbridge_compatible_(rosbridge_compatible),
   callback_(callback),
-  binary_callback_(binary_callback)
+  binary_callback_(binary_callback),
+  // Deferred param responses must outlive this handler, so RosapiParams gets
+  // the raw transport callback rather than a wrapper around this object.
+  rosapi_params_(node, callback),
+  rosapi_introspection_(node, rosbridge_compatible),
+  action_handler_(node, callback)
 {
   RCLCPP_INFO(
     get_logger(), "Constructing client %s(%s)", std::to_string(client_id_).c_str(),
@@ -100,6 +105,10 @@ json ClientHandler::process_message(json & msg)
 
   if (op == "unsubscribe") {
     handled = unsubscribe_from_topic(msg, response);
+  }
+
+  if (op == "send_action_goal" || op == "cancel_action_goal") {
+    handled = action_handler_.handle_message(msg, response);
   }
 
   if (!handled) {
@@ -480,6 +489,14 @@ bool ClientHandler::call_service(const json & msg, json & response)
     }
 
     response["result"] = true;
+    return true;
+  }
+
+  if (rosapi_params_.handle_service_call(msg, response)) {
+    return true;
+  }
+
+  if (rosapi_introspection_.handle_service_call(msg, response)) {
     return true;
   }
 

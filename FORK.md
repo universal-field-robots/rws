@@ -48,6 +48,49 @@ We do **not** track upstream wholesale — we cherry-pick.
   the publisher exists" case is handled by the shared subscription's fan-out, not by
   this one-shot. (Upstream removed this replay entirely.)
 
+### Native rosapi param services (`src/rosapi_params.cpp`, upstream has nothing like it)
+- rws now answers `/rosapi/get_param`, `set_param`, `has_param`, `delete_param` and
+  `get_param_names` itself (intercepted in `call_service` before the external-service
+  fallthrough), replacing the python `rosapi` node for params. The python version
+  serialized every call behind a global lock with a blocking 5s `wait_for_service`,
+  so one lookup of a missing param stalled all other GUI param calls for 5s.
+- Each call goes through an **async generic client** to the target node's own
+  parameter services (`<node>/get_parameters` etc.); nodes not on the graph are
+  answered **immediately** with the default. `get_param_names` fans out to all nodes
+  concurrently with a 2s watchdog so one hung node can't hang the request.
+- Wire contract is byte-compatible with python rosapi (`"<node>:<param>"` names,
+  JSON-encoded string values), so `roslibjs`/GUI needed **no changes**. One deliberate
+  divergence: python's `set_param` re-parsed a JSON *string* value through YAML (so
+  `"5"` silently became the integer 5); we map JSON types directly.
+
+### Remaining rosapi services in C++ (`src/rosapi_introspection.cpp`)
+- Completes the rosapi surface so the python rosapi node / rosbridge can be dropped
+  entirely: `/rosapi/services`, `topics_for_type`, `action_servers`,
+  `service_providers`, `service_node`, `get_time`, `get_ros_version`,
+  `message_details`, `service_request_details`, `service_response_details`. All
+  answered synchronously from the local graph cache / introspection typesupport.
+- TypeDef responses: `constnames`/`constvalues` are always empty (introspection
+  typesupport doesn't expose constants; python read them off the message class).
+  Field/type names use `pkg/msg/Type` form self-consistently, and
+  `builtin_interfaces/msg/Time` fields are emitted as `secs`/`nsecs` when
+  rosbridge-compatible, matching the wire mapping in `translate.cpp`.
+- Deliberate fix vs python: `service_providers` matches by service **name** (the
+  .srv field); python accidentally matched by service *type*.
+
+### ROS 2 action client support (`src/action_handler.cpp`, upstream has nothing like it)
+- New ops `send_action_goal` / `cancel_action_goal`; rws streams back
+  `action_feedback` per feedback message and a terminal `action_result`
+  (with GoalStatus), all correlated by the client-chosen `id`. Matches upstream
+  rosbridge op naming; our `roslibjs` fork gained a matching `Action` class.
+- Built on the action's underlying interfaces — `<action>/_action/send_goal` /
+  `get_result` / `cancel_goal` services via `GenericClient` and a generic
+  subscription on `<action>/_action/feedback` filtered by goal UUID — because
+  rcl_action has no type-erased client. `action_type` may be omitted; it is
+  then resolved from the feedback topic's type on the graph.
+- Failure paths (unknown action, server not ready, goal rejected) always emit
+  an `action_result` with `result: false` so the GUI never hangs. Concurrent
+  goals on one action are supported (one feedback subscription per goal).
+
 ---
 
 ## Fixes on branch `jazzy-service-subscribe-fixes` (commit `04d9aa0`)

@@ -54,6 +54,8 @@ set(DEPENDENCIES
   rclcpp
   ament_index_cpp
   CycloneDDS
+  rcpputils
+  rosidl_typesupport_introspection_cpp
 )
 
 # Find ROS dependencies
@@ -61,6 +63,32 @@ find_package(ament_cmake REQUIRED)
 foreach(Dependency IN ITEMS ${DEPENDENCIES})
   find_package(${Dependency} REQUIRED)
 endforeach()
+
+# Exported library: JSON <-> SerializedMessage translation for runtime
+# (introspection-based) message construction, reusable by other packages.
+add_library(rws_translate SHARED
+  src/translate.cpp
+  src/serdes.cpp
+  src/typesupport_helpers.cpp
+)
+ament_target_dependencies(rws_translate ${DEPENDENCIES})
+target_include_directories(rws_translate PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(rws_translate PUBLIC c_std_99 cxx_std_17)
+target_link_libraries(rws_translate CycloneDDS::ddsc nlohmann_json::nlohmann_json)
+
+install(TARGETS rws_translate
+  EXPORT export_rws_translate
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+install(DIRECTORY include/ DESTINATION include)
+
+ament_export_targets(export_rws_translate HAS_LIBRARY_TARGET)
+ament_export_dependencies(${DEPENDENCIES} nlohmann_json)
 
 file(GLOB SRCFILES src/*.*pp)
 add_executable(rws_server ${SRCFILES})
@@ -136,6 +164,9 @@ if(BUILD_TESTING)
   ament_add_gmock(client_handler_test
     test/client_handler_test.cpp
     src/client_handler.cpp
+    src/action_handler.cpp
+    src/rosapi_params.cpp
+    src/rosapi_introspection.cpp
     src/typesupport_helpers.cpp
     src/translate.cpp
     src/serdes.cpp
@@ -147,6 +178,34 @@ if(BUILD_TESTING)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test/mocks>
     $<INSTALL_INTERFACE:include>)
   target_link_libraries(client_handler_test CycloneDDS::ddsc nlohmann_json::nlohmann_json)
+
+  # rosapi_params_test
+  ament_add_gtest(rosapi_params_test
+    test/rosapi_params_test.cpp
+    src/rosapi_params.cpp
+    src/typesupport_helpers.cpp
+    src/translate.cpp
+    src/serdes.cpp
+  )
+  ament_target_dependencies(rosapi_params_test ${DEPENDENCIES})
+  target_include_directories(rosapi_params_test PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include>)
+  target_link_libraries(rosapi_params_test CycloneDDS::ddsc nlohmann_json::nlohmann_json)
+
+  # rosapi_introspection_test
+  ament_add_gtest(rosapi_introspection_test
+    test/rosapi_introspection_test.cpp
+    src/rosapi_introspection.cpp
+    src/typesupport_helpers.cpp
+  )
+  ament_target_dependencies(rosapi_introspection_test ${DEPENDENCIES})
+  target_include_directories(rosapi_introspection_test PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include>)
+  target_link_libraries(rosapi_introspection_test nlohmann_json::nlohmann_json)
 endif()
 
 ament_package()

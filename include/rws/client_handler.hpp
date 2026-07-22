@@ -21,6 +21,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rws/connector.hpp"
 #include "rws/generic_client.hpp"
+#include "rws/action_handler.hpp"
+#include "rws/rosapi_introspection.hpp"
+#include "rws/rosapi_params.hpp"
 
 namespace rws
 {
@@ -52,6 +55,9 @@ private:
   std::map<std::string, std::function<void(std::shared_ptr<const rclcpp::SerializedMessage>)>>
     publisher_cb_;
   std::map<std::string, std::shared_ptr<rws::GenericClient>> clients_;
+  RosapiParams rosapi_params_;
+  RosapiIntrospection rosapi_introspection_;
+  ActionHandler action_handler_;
 
   rclcpp::Logger get_logger()
   {

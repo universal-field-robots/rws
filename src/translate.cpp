@@ -171,9 +171,19 @@ static void serialize_field(
   } else if (member->array_size_ && !member->is_upper_bound_) {
 
     // ROS UUID messages are uint8[] which come fro json as a map of the form {"0": 0, "1": 1}
-    // Which works with iterators but not indexes
+    // Which works with iterators but not indexes.
+    // Fixed-size arrays must serialize exactly array_size_ elements, so pad
+    // with the default value when the json field is missing or short.
+    size_t serialized_count = 0;
     for (const auto& it: field) {
+      if (serialized_count >= member->array_size_) {
+        break;
+      }
       ser << (it.is_null() || field.is_null() ? default_value : it.get<T>());
+      serialized_count++;
+    }
+    for (; serialized_count < member->array_size_; serialized_count++) {
+      ser << default_value;
     }
   } else {
     uint32_t seq_size = field.size();
